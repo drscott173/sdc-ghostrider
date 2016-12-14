@@ -7,9 +7,6 @@ where the image is a frame from a
 [car driving simulator](https://d17h27t6h515a5.cloudfront.net/topher/2016/November/5831f290_simulator-macos/simulator-macos.zip). A sample
 image is seen below.
 
-Note:  This pedagogical example requires that the simulator be run in 640x480
-resolution.
-
 ![Input Image](images/frame.png?raw=true "An input frame")
 
 We obtain training images
@@ -17,6 +14,34 @@ by playing the video game and capturing 10 images per second, along with the
 current values for the brake, steering, and acceleration.  We test the network
 by feeding raw images into our network, extracting the steering angle, then transmitting
 the angle into the game via a socket connection.
+
+## Dependencies
+
+This pedagogical example requires that the simulator be run in 640x480
+resolution.  We also require a Python 3.x environment with the following packages:
+
+- Anaconda Python Distribution
+- numpy
+- flask-socketio
+- eventlet
+- pillow
+- h5py
+- matplotlib
+- pandas
+- keras
+- tensorflow
+
+The GitHub distribution includes the sample images.  The generated "data.p" data files
+must be generated on demand as the results are too large to store on GitHub.  This will
+happen automatically the first time you train a model.
+
+We include the following key files so you can get started quickly:
+
+- model.json, a json file storing the keras convolutional network
+- model.h5, weights after a dozen hours of training
+- drive.py, the autonomous server, run with ```python drive.py model.json'''
+
+
 
 ## Solution Design
 
