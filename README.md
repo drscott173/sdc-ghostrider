@@ -32,7 +32,7 @@ and white vs. color images to train on a laptop CPU.
 
 The input X to our model is a tensor of dimension [?, 80, 160, 1], where ? is the
 number of 160x80 black and white images stored in row-major order.  The labels y to our
-network are of dimesion [?] where each value is the observed steering angle from
+network are of dimension [?] where each value is the observed steering angle from
 our simulated driving for the corresponding image.
 
 We add a normalization up front to simplify fitting and improve 
@@ -47,6 +47,7 @@ also add a dropout filter that squashes half of the values randomly on every cyc
 to prevent overfitting.  The layers are 
 
 - An input layer of [?, 80, 160, 1] images
+- A virtual "normalization" layer using code (see 'process' routine in model.py)
 - 5x5 convolution with 24 filters, with a stride of 2, 50% dropout, RELU activation
 - 5x5 convolution with 36 filters, with a stride of 2, 50% dropout, RELU activation
 - 5x5 convolution with 48 filters, with a stride of 2, RELU activation
@@ -109,8 +110,12 @@ we tried multiple algorithms and techniques to get this right.
 
 ## Simulation
 
+Note:  Please load model.py and the "predict-steering(model,image)"
+when evaluating the model.  We have updated "drive.py" to do this
+correctly.
+
 We ran 400 epochs over 16 hours of training.  The result showed early signs
-of learning to ride the track!  It's a hair raising-ride for sure.  The car is
+of learning to ride the track!  It's a hair-raising ride, for sure.  The car is
 able to stay on the road and navigate a few turns before veering off or
 getting stuck.
 
@@ -124,7 +129,7 @@ frustrating -- 60 percent accuracy was barely better than pure chance.  Further,
 a stupid algorithm that would fix driving at 0 outperformed the network.
 
 It then occurred to us that the input data was heavily biased toward 0!  The
-network clearly converged on 0 and was unable to capture the statistical outliers.
-However, those outliers were in fact what we needed!  Fixing the dataset to
+network converged on 0 and was unable to capture the statistical outliers.
+However, those outliers were in fact what we needed.  Fixing the dataset to
 prefer turns got our network to learn again.
 
