@@ -20,6 +20,7 @@ csv_keys = ['center','left','right','angle','throttle','brake','speed']
 train_dir = 'train/'
 batch_size = 200  # Batch size when training
 nb_epoch = 200 # Number of epochs for training
+signal_scale = 1
 
 def process(img):
     # Here's the basic image pipeline for a single frame
@@ -167,7 +168,7 @@ def reshape_xy(X,y):
     y1 = np.zeros((n_samples))
     for i in range(0,n_samples):
         X1[i,:,:] = X[i].reshape(image_shape[0], image_shape[1], 1)
-        y1[i] = y[i]
+        y1[i] = signal_scale*y[i]
     return X1, y1
 
 def build_model(shape):
@@ -238,21 +239,28 @@ def train_model(model, X, y):
 	# Train our model on images X and driving angles y.
 	# Scramble and choose a train/test split of 80/20.
 	#
-	X1, y1 = prefer_turns_in_data(X,y)
-	X_train, X_test, y_train, y_test = train_test_split(X1, y1, 
-		test_size=0.2, random_state=42)
-	model.fit(X_train, y_train,
-		batch_size=batch_size, nb_epoch=nb_epoch,
-        verbose=1, validation_data=(X_test, y_test))
+	epochs = 0
+	while epochs < nb_epoch:
+		X1, y1 = prefer_turns_in_data(X,y)
+		X_train, X_test, y_train, y_test = train_test_split(X1, y1, 
+			test_size=0.2, random_state=42)
+		X1 = y1 = None
+		model.fit(X_train, y_train,
+			batch_size=batch_size, nb_epoch=5,
+        	verbose=1, validation_data=(X_test, y_test))
+		epochs += 5
+		save_model(model)
+
 	return model
 
-def learn():
+def learn(model=None):
 	#
 	# Use this routine to train and save a new model.
 	#
 	X_raw, y_raw = load_all_data()
 	X, y = reshape_xy(X_raw, y_raw)
-	model = build_model(X.shape[1:])
+	if model is None:
+		model = build_model(X.shape[1:])
 	model.compile(loss='mse', optimizer=Adam())
 	return save_model(train_model(model, X, y))
 
@@ -260,13 +268,18 @@ def load_model():
 	#
 	# Likewise, load a model here.
 	#
-	return load_model("./model.h5")
+	with open('./model.json', mode='r') as f:
+		model = model_from_json(json.loads(f.read()))
+
+	# load weights into new model
+	model.load_weights("./model.h5")
+	return model
 
 def predict_steering(model, img):
 	# 
 	# Given a model and a raw input image, return the predicted steering angle.
 	#
 	X, _ = reshape_xy([normalize_image(process(img))], [0])
-	return model.predict(X, batch_size=1, verbose=0)[0][0]
+	return model.predict(X, batch_size=1, verbose=0)[0][0]/signal_scale
 
 
