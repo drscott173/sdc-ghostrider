@@ -37,11 +37,14 @@ our simulated driving for the corresponding image.
 
 We add a normalization up front to simplify fitting and improve 
 performance of network optimization.  This normalization blocks out the top and
-bottom of the to focus on the driving area, then normalizes pixel values to 
+bottom of the image with zero's to focus on the driving area, 
+then normalizes pixel values to 
 the interval [-0.5, 0.5].
 
-Our model seen above 
-is a succession of 5 convolutional networks (CNNs) with RELU activation, followed
+![Normalized Image](images/data.png?raw=true "A normalized image as input data")
+
+Our model seen above feeds these normalized images into
+a succession of 5 convolutional networks (CNNs) with RELU activation, followed
 by a tapering of 3 fully connected layers.  The first two CNNs
 also add a dropout filter that squashes half of the values randomly on every cycle
 to prevent overfitting.  The layers are 
@@ -54,7 +57,7 @@ to prevent overfitting.  The layers are
 - 3x3 convolution with 64 filters, with a stride of 2, RELU activation
 - 3x3 convolution with 64 filters, with a stride of 2, RELU activation
 - A flattening layer
-- Afully connected linear layer of 100 neurons, RELU activation
+- A fully connected linear layer of 100 neurons, RELU activation
 - A fully connected layer of 50 neurons, RELU activation
 - A fully connected layer of 10 neurons
 - An output layer of 1 neuron
@@ -71,8 +74,6 @@ We wrote processing routines that convert the JPEG images into normalized
 images and extract the driving angle from the CSV.  The images and angles are
 stacked vertically to create a feature set X and a label set y.  We store
 the array [X,y] in data.p within the directory.
-
-![Processed Image](images/data.png?raw=true "A frame as input data")
 
 For debugging purposes we also create animated videos of both the extracted
 images as well as early experiments in identifying lines in the image.  The latter
