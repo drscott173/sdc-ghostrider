@@ -39,13 +39,15 @@ We include the following key files so you can get started quickly:
 
 - model.json, a json file storing the keras convolutional network
 - model.h5, weights after a dozen hours of training
-- drive.py, the autonomous server, run with ```python drive.py model.json'''
+- drive.py, the autonomous server, run with "python drive.py model.json"
 
 
 
 ## Solution Design
 
-Good programmers learn from great programmers.  Researchers at NVidia had created
+Good programmers learn from great programmers.
+
+Researchers at NVidia had created
 [a deep neural network](http://images.nvidia.com/content/tegra/automotive/images/2016/solutions/pdf/end-to-end-dl-using-px.pdf) 
 for driving a car solely from camera input.  They biased training examples to prefer snapshots where turning is involved.  This was to avoid overfitting 
 to the usual case of driving straight.  These images were separated into three YUV channels
