@@ -17,7 +17,8 @@ the angle into the game via a socket connection.
 ## Solution Design
 
 Good programmers learn from great programmers.  Researchers at NVidia had created
-a deep neural network for driving a car solely from camera input.  They biased training examples to prefer snapshots where turning is involved.  This was to avoid overfitting 
+[a deep neural network](http://images.nvidia.com/content/tegra/automotive/images/2016/solutions/pdf/end-to-end-dl-using-px.pdf) 
+for driving a car solely from camera input.  They biased training examples to prefer snapshots where turning is involved.  This was to avoid overfitting 
 to the usual case of driving straight.  These images were separated into three YUV channels
 and fed into a deep network.  
 
@@ -26,6 +27,8 @@ Keras with a TensorFlow backend.  We've reduced the image size and chose black
 and white vs. color images to train on a laptop CPU. 
 
 ## Model Architecture
+
+![NVidia's CNN Model](images/network.png?raw=true "CNN architecture (courtesy NVidia)")
 
 The input X to our model is a tensor of dimension [?, 80, 160, 1], where ? is the
 number of 160x80 black and white images stored in row-major order.  The labels y to our
@@ -37,7 +40,8 @@ performance of network optimization.  This normalization blocks out the top and
 bottom of the to focus on the driving area, then normalizes pixel values to 
 the interval [-0.5, 0.5].
 
-Our model is a succession of 5 convolutional networks (CNNs) with RELU activation, followed
+Our model seen above 
+is a succession of 5 convolutional networks (CNNs) with RELU activation, followed
 by a tapering of 3 fully connected layers.  The first two CNNs
 also add a dropout filter that squashes half of the values randomly on every cycle
 to prevent overfitting.  The layers are 
