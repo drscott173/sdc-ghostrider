@@ -6,7 +6,7 @@ We seek to create a neural network that predicts a steering angle from an image,
 where the image is a frame from a car racing videogame. A sample
 image is seen below.
 
-![Input Image](images/frame.jpg?raw=true "An input frame")
+![Input Image](images/frame.png?raw=true "An input frame")
 
 We obtain training images
 by playing the video game and capturing 10 images per second, along with the
@@ -67,7 +67,7 @@ images and extract the driving angle from the CSV.  The images and angles are
 stacked vertically to create a feature set X and a label set y.  We store
 the array [X,y] in data.p within the directory.
 
-![Processed Image](images/data.jpg?raw=true "A frame as input data")
+![Processed Image](images/data.png?raw=true "A frame as input data")
 
 For debugging purposes we also create animated videos of both the extracted
 images as well as early experiments in identifying lines in the image.  The latter
