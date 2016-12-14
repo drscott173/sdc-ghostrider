@@ -3,8 +3,12 @@
 SDC Project 3 - a deep learning network that learns to drive by watching you.
 
 We seek to create a neural network that predicts a steering angle from an image,
-where the image is a frame from a car racing videogame. A sample
+where the image is a frame from a
+[car driving simulator](https://d17h27t6h515a5.cloudfront.net/topher/2016/November/5831f290_simulator-macos/simulator-macos.zip). A sample
 image is seen below.
+
+Note:  This pedagogical example requires that the simulator be run in 640x480
+resolution.
 
 ![Input Image](images/frame.png?raw=true "An input frame")
 
