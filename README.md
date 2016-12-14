@@ -99,13 +99,14 @@ for training with a batch size of 100, and 20 percent for evaluation.
 We would also save the network and its
 weights to allow us to resume our life (you know, to eat, or sleep).
 
-We compared the predicted steering angle from teh network against the desired
+We compared the predicted steering angle from our network against the desired
 angle y.  If these differed, we'd calculate the squared error and adjust
 the weights to reduce this error as we back-propagated through the network to
 the inputs.  We used the Adam algorithm to attenuate both the learning rate
 and delta applied to each weight or bias over time.
 
-If you're curious, you can look out our Python notebook to see the handiwork as
+If you're curious, you can check out our 
+[Python notebook](GhostDriver.ipynb) to see the handiwork as
 we tried multiple algorithms and techniques to get this right.
 
 ## Simulation
@@ -123,13 +124,15 @@ With over 250,000 weights the network clearly neeeds (1) more data and (2) more
 training time.  Yet this pedagogical example demonstrates that we're on the right
 path and convergence feels plausible.
 
-We noted that other students observed that training seemed to "get stuck" after
+Many students of this course observed that training seemed to "get stuck" after
 a half dozen epochs.  We saw the same behavior, which at first was highly
 frustrating -- 60 percent accuracy was barely better than pure chance.  Further,
 a stupid algorithm that would fix driving at 0 outperformed the network.
 
-It then occurred to us that the input data was heavily biased toward 0!  The
+It then occurred to us that the input data was heavily biased toward 0. The
+accuracy was directly correlated to the percentage of "drive straight"
+training examples.   The
 network converged on 0 and was unable to capture the statistical outliers.
 However, those outliers were in fact what we needed.  Fixing the dataset to
-prefer turns got our network to learn again.
+prefer turns with non-zero steering angles got our network to learn again.
 
