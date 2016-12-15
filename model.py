@@ -114,17 +114,32 @@ def gen_data(subdir):
     base = train_dir+subdir+"/"
     csv = base+"driving_log.csv"
     data_path = base+"data.p"
+    chunk_size = 1000
+    paths = [x[len(base):] for x in glob(base+"data*.p")]
     if not os.path.exists(data_path):
+        paths = []
         df=pd.read_csv(csv, sep=',',header=None, names=csv_keys)
         X_raw = df[['left','center','right']]
-        y_df = df[['angle']]
-        X_df = X_raw.ix[:,:].apply(lambda row: row.apply(lambda path: image_to_data(subdir, path)),
-                                   axis=1)
-        X = np.array(X_df.values)
-        y = np.array(y_df.values)[:,0]
-        print("Saving X shape ", X.shape, "y shape", y.shape, "for", subdir)
-        pickle.dump([X,y], open(data_path, "wb"))
-    return data_path 
+        y_raw = df[['angle']]
+        n_samples = len(X_raw)
+        for chunk in range(0,n_samples,chunk_size):
+            n = int(chunk/chunk_size)
+            if n > 0:
+                data_path = "{}data{}.p".format(base, n)
+            paths.append(data_path)
+            lo = n*chunk_size
+            hi = min(n_samples, lo+chunk_size)
+            X_df = X_raw.ix[lo:hi,:].apply(lambda row: row.apply(lambda path: image_to_data(subdir, path)),
+                                    axis=1)
+            X_df = X_df[0:chunk_size]
+            y_df = y_raw[lo:hi]
+            print("Sizes ",len(X_df),len(y_df))
+            X = np.array(X_df.values)
+            y = np.array(y_df.values)[:,0]
+            print("Saving X shape ", X.shape, "y shape", y.shape, "for", subdir)
+            pickle.dump([X,y], open(data_path, "wb"))
+            print("Created ",data_path)
+    return paths
 
 def gen_all_data(verbose=True):
 	# Loop through all training data and make sure we have data.p files
@@ -148,13 +163,14 @@ def load_all_data():
     y = np.array([])
     print("Loading data, please stand by.")
     for d in [x[6:] for x in glob(train_dir+"*")]:
-        with open(gen_data(d), mode='rb') as f:
-            X_d,y_d = pickle.load(f)
-            for i in range(1,2):
-                X = np.append(X,X_d[:,i])
-                y = np.append(y,y_d)
+        for data_path in gen_data(d):
+            with open(data_path, mode='rb') as f:
+                X_d,y_d = pickle.load(f)
+                for i in range(1,2):
+                    X = np.append(X,X_d[:,i])
+                    y = np.append(y,y_d)
     return X, y
-
+    
 def reshape_xy(X,y):
 	#
 	# I stored raw images as a single dimension array, where each entry

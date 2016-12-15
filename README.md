@@ -152,7 +152,7 @@ of learning to ride the track!  It's a hair-raising ride, for sure.  The car is
 able to stay on the road and navigate a few turns before veering off or
 getting stuck.
 
-With over 250,000 weights the network clearly neeeds (1) more data and (2) more
+With over 250,000 weights the network clearly neeeds (1) more and cleaner data and (2) more
 training time.  Yet this pedagogical example demonstrates that we're on the right
 path and convergence feels plausible.
 
