@@ -99,7 +99,7 @@ def image_to_data(subdir, path):
 	# This routine converts a subdir and path into an array for training.
 	#
     path = train_dir+subdir+"/"+(path.strip())
-    data = normalize_image(process(mpimg.imread(path).astype('uint8')))
+    data = normalize_image(process(cv2.imread(path).astype('uint8')))
     return data
 
 def gen_data(subdir):
@@ -116,7 +116,7 @@ def gen_data(subdir):
     data_path = base+"data.p"
     chunk_size = 1000
     paths = glob(base+"data*.p")
-    if not os.path.exists(data_path):
+    if not os.path.exists (data_path):
         paths = []
         df=pd.read_csv(csv, sep=',',header=None, names=csv_keys)
         X_raw = df[['left','center','right']]
