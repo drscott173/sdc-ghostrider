@@ -115,7 +115,7 @@ def gen_data(subdir):
     csv = base+"driving_log.csv"
     data_path = base+"data.p"
     chunk_size = 1000
-    paths = [x[len(base):] for x in glob(base+"data*.p")]
+    paths = glob(base+"data*.p")
     if not os.path.exists(data_path):
         paths = []
         df=pd.read_csv(csv, sep=',',header=None, names=csv_keys)
@@ -170,7 +170,7 @@ def load_all_data():
                     X = np.append(X,X_d[:,i])
                     y = np.append(y,y_d)
     return X, y
-    
+
 def reshape_xy(X,y):
 	#
 	# I stored raw images as a single dimension array, where each entry
