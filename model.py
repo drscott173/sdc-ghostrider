@@ -9,8 +9,10 @@ import os.path
 import json
 from glob import glob
 from keras.models import Sequential
-from keras.layers.core import Dense, Dropout, Activation, Flatten
+from keras.layers.core import Dense, Dropout, Activation, Flatten, Lambda
 from keras.layers.convolutional import Convolution2D
+from keras.layers.pooling import MaxPooling2D
+from keras.layers.normalization import BatchNormalization
 from keras.optimizers import Adam
 from keras.models import model_from_json
 from sklearn.model_selection import train_test_split
@@ -18,68 +20,136 @@ from sklearn.model_selection import train_test_split
 # Some Hyper Parameters
 csv_keys = ['center','left','right','angle','throttle','brake','speed']
 train_dir = 'train/'
-batch_size = 200  # Batch size when training
-nb_epoch = 200 # Number of epochs for training
+batch_size = 32  # Batch size when training
+nb_epoch = 20 # Number of epochs for training
 signal_scale = 1
+train_split = 0.95
+test_image = "./test_train/test/IMG/center_2016_12_26_10_59_29_903.jpg"
+gid = "00b4903a97d4b5e0859e13d01d014b8f2dd1ebc9fbf9188650a15efe983f8596term"
+
+##
+## Image augmentation
+##
+
+def yuv2hls(img):
+    img1 = cv2.cvtColor(img, cv2.COLOR_YUV2BGR)
+    img2 = cv2.cvtColor(img1,cv2.COLOR_BGR2HLS)
+    return img2
+
+def hls2yuv(img):
+    img1 = cv2.cvtColor(img, cv2.COLOR_HLS2BGR)
+    img2 = cv2.cvtColor(img1,cv2.COLOR_BGR2YUV)
+    return img1
+
+def yuv2hsv(img):
+    img1 = cv2.cvtColor(img, cv2.COLOR_YUV2BGR)
+    img2 = cv2.cvtColor(img1,cv2.COLOR_BGR2HSV)
+    return img1
+
+def hsv2yuv(img):
+    img1 = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
+    img2 = cv2.cvtColor(img1,cv2.COLOR_BGR2YUV)
+    return img1
+
+def add_random_shadow(image):
+    rows,cols,_ = image.shape
+    top_y = cols*np.random.uniform()
+    top_x = 0
+    bot_x = rows
+    bot_y = cols*np.random.uniform()
+    image_hls = yuv2hls(image)
+    shadow_mask = 0*image_hls[:,:,1]
+    X_m = np.mgrid[0:image.shape[0],0:image.shape[1]][0]
+    Y_m = np.mgrid[0:image.shape[0],0:image.shape[1]][1]
+    shadow_mask[((X_m-top_x)*(bot_y-top_y)-(bot_x - top_x)*(Y_m-top_y) >=0)] = 1
+    random_bright = .25+.7*np.random.uniform()
+    if (np.random.randint(2) ==1 ):
+        random_bright = .5
+        cond1 = (shadow_mask==1)
+        cond0 = (shadow_mask==0)
+        if np.random.randint(2)==1:
+            image_hls[:,:,1][cond1] = image_hls[:,:,1][cond1]*random_bright
+        else:
+            image_hls[:,:,1][cond0] = image_hls[:,:,1][cond0]*random_bright 
+    image = hls2yuv(image_hls)   
+    return image
+
+def augment_brightness_camera_images(image):
+    # expects input image as YUV
+    image1 = yuv2hsv(image)
+    random_bright = .25+np.random.uniform()
+    image1[:,:,2] = image1[:,:,2]*random_bright
+    image2 = hsv2yuv(image1)
+    return image2
+
+def trans_image(img,steer,trans_range):
+    # Translation
+    image = cv2.cvtColor(img, cv2.COLOR_YUV2BGR)
+    rows, cols, _ = image.shape
+    tr_x = trans_range*np.random.uniform()-trans_range/2
+    steer_ang = steer + tr_x/trans_range*2*.2
+    tr_y = 40*np.random.uniform()-40/2
+    #tr_y = 0
+    Trans_M = np.float32([[1,0,tr_x],[0,1,tr_y]])
+    image_tr = cv2.warpAffine(image,Trans_M,(cols,rows))
+    img_final = cv2.cvtColor(image_tr, cv2.COLOR_BGR2YUV)
+    return img_final,steer_ang
+
+def augment_image(X, y):
+    #print(X.shape)
+    camera = np.random.randint(3)
+    if (camera == 0): 
+        # left 
+        X = X[0]
+        y += 0.25
+    if (camera == 1):
+        # center
+        X = X[1]
+    if (camera == 2):
+        # right
+        X = X[2]
+        y += -0.25
+    #print("Chosen X shape", X.shape)
+    img = X
+    if (np.random.randint(4) == 0):
+        img_shadows = add_random_shadow(img)
+        img_bright = augment_brightness_camera_images(img_shadows)
+        img_tr, y = trans_image(img_bright, y, 50)
+        img = img_tr
+        if (np.random.randint(2) == 0):
+            img = cv2.flip(img_tr,1)
+            y = -y
+    #img = cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA)
+    return img, y
+
+def write_aug(X,y,fname):
+    x1 = cv2.cvtColor(X, cv2.COLOR_YUV2BGR)
+    x2 = cv2.resize(x1, (128, 128), interpolation=cv2.INTER_AREA)
+    cv2.putText(x2, "y={}".format(y), (2,120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255))
+    cv2.imwrite(fname, x2) 
+
+def test_augmentation(X, y):
+    write_aug(X[0],y,"./tmp/00augment.png")
+    for i in range(0,64):
+        x1, y1 = augment_image(X,y)
+        write_aug(x1,y1,"./tmp/augment{}.png".format(i+1))
+
+def region_of_interest(img):
+    #
+    # We crop and resize to 66x200 per NVidia, assuming a 160x320 input
+    #
+    img_roi = img[55:135,40:280]
+    img = cv2.resize(img_roi,(200,66))
+    return img
 
 def process(img):
     # Here's the basic image pipeline for a single frame
     #
-    # We convert RGB to grayscale then put on blinders
-    # to ignore scenery above and below the driving
-    # area.
+    # We clip the center of the image and conert to three channels of YUV
     #
-    xsize = img.shape[1]
-    ysize = img.shape[0]
-    dx = int(xsize*0.0) # offset from x left, right border
-    dy_top = int(ysize*0.35) # offset from y top border
-    dy_bottom = int(ysize*0.2) #offset from y bottom 
-    center = int(0.5*xsize) 
-    vertices = np.array([[(dx,ysize-dy_bottom), 
-                          (dx, dy_top), 
-                          (xsize, dy_top), 
-                          (xsize, ysize-dy_bottom)]], 
-                        dtype=np.int32)
-    out = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    out = region_of_interest(out, vertices)
-    out = cv2.resize(out, (0,0), fx=0.5, fy=0.5)
-    return out
-
-def region_of_interest(img, vertices):
-    """
-    Applies an image mask.
-    
-    Only keeps the region of the image defined by the polygon
-    formed from `vertices`. The rest of the image is set to black.
-    """
-    #defining a blank mask to start with
-    mask = np.zeros_like(img)   
-    
-    #defining a 3 channel or 1 channel color to fill the mask with depending on the input image
-    if len(img.shape) > 2:
-        channel_count = img.shape[2]  # i.e. 3 or 4 depending on your image
-        ignore_mask_color = (255,) * channel_count
-    else:
-        ignore_mask_color = 255
-        
-    #filling pixels inside the polygon defined by "vertices" with the fill color  
-    cv2.fillPoly(mask, vertices, ignore_mask_color)
-    
-    #returning the image only where mask pixels are nonzero
-    masked_image = cv2.bitwise_and(img, mask)
-    return masked_image
-
-def normalize_image(image):
-	#
-	# We convert a grayscale image to an array of numbers
-	# that vary from [-0.5, 0.5], normalizing grays to a range of 1.0
-	# with a median of 0.
-	#
-    img = np.array(image, dtype=np.float32)
-    lo = np.min(img[:,:])*1.0
-    hi = np.max(img[:,:])*1.0
-    img[:,:] = (img[:,:]-lo)/(hi-lo) - 0.5
-    return img
+    out = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    out1 = region_of_interest(out)
+    return out1
 
 def image_to_data(subdir, path):
 	#
@@ -99,8 +169,17 @@ def image_to_data(subdir, path):
 	# This routine converts a subdir and path into an array for training.
 	#
     path = train_dir+subdir+"/"+(path.strip())
-    data = normalize_image(process(cv2.imread(path).astype('uint8')))
+    data = process(cv2.imread(path).astype('uint8'))
     return data
+
+def epoch_size():
+    size = 0
+    for d in [x[len(train_dir):] for x in glob(train_dir+"*")]:
+        base = train_dir+d+"/"
+        csv = base+"driving_log.csv"
+        df=pd.read_csv(csv, sep=',',header=None, names=csv_keys)
+        size += len(df)
+    return size
 
 def gen_data(subdir):
 	# 
@@ -144,158 +223,252 @@ def gen_data(subdir):
 def gen_all_data(verbose=True):
 	# Loop through all training data and make sure we have data.p files
 	# of prepared image data X and steering angle y [X,y].
-    for d in [x[6:] for x in glob("train/*")]:
+    for d in [x[len(train_dir):] for x in glob(train_dir+"*")]:
         if verbose: 
             print("Generating data for "+d)
-        with open(gen_data(d), mode='rb') as f:
-            X,y = pickle.load(f)
-            if verbose:
-                print("  X is ", X.shape, " y is ",y.shape)
+        gen_data(d)
 
 # Reshape data into tensors for training
 
-def load_all_data():
-	#
-	# Load all data into memory.  I didn't use generators
-	# this time around.
-	#
-    X = np.array([])
-    y = np.array([])
-    print("Loading data, please stand by.")
-    for d in [x[6:] for x in glob(train_dir+"*")]:
-        for data_path in gen_data(d):
-            with open(data_path, mode='rb') as f:
-                X_d,y_d = pickle.load(f)
-                for i in range(1,2):
-                    X = np.append(X,X_d[:,i])
-                    y = np.append(y,y_d)
-    return X, y
+def get_input_shape():
+    first_dir = [x[len(train_dir):] for x in glob(train_dir+"*")][0]
+    base = train_dir+first_dir+"/"
+    with open(base+"data.p", mode='rb') as f:
+        X_d,y_d = pickle.load(f)
+        X_d1 = X_d[:,1] # center camera
+        X_d, y_d = reshape_xy([X_d1[0]], [y_d[0]])
+        return X_d.shape[1:]
+
+def Xy_generator(validate=False):
+    #
+    # Generate all data resident in files within the train/ directory
+    # using a train/test split where "train_split" is the percentage
+    # of the data we want to use for training.  
+    #
+    # If we set "validate" to true, we yield the validation data.
+    # If "validate'" is false, we yield the training data.
+    #
+    ishape = get_input_shape()
+    chosen = np.zeros((1, ishape[0], ishape[1], ishape[2]))
+    while 1:
+        for d in [x[len(train_dir):] for x in glob(train_dir+"*")]:   #iterate over trainin sets
+            for data_path in gen_data(d):
+                with open(data_path, mode='rb') as f:    #iterate over chunks
+                    print("\nVisiting ",data_path)
+                    X_d,y_d = pickle.load(f)
+                    X_train, X_test, y_train, y_test = train_test_split(X_d, y_d, 
+                        test_size=(1.0-train_split), random_state=42)
+                    #print("Num train", len(X_train), "Num test", len(X_test))
+                    if validate:
+                        X_d = X_test
+                        y_d = y_test
+                    else:
+                        X_d = X_train
+                        y_d = y_train
+                    # images are left, center, right.  tweak angle by +/- 0.07 for
+                    # left and right
+                    for n in range(0,len(X_d)):
+                        chosen[0,:,:,:], y_i = augment_image(X_d[n], y_d[n])
+                        yield (chosen, y_i)
+
+def batch_generator(batch_size=32, validate=False, skip_pr=0.0):
+    ishape = get_input_shape()
+    X_batch = np.zeros((batch_size, ishape[0], ishape[1], ishape[2]))
+    #X_batch = np.zeros((batch_size, 64, 64, 3))
+    y_batch = np.zeros((batch_size))
+    ptr = 0
+    xy = Xy_generator(validate)
+    while 1:
+
+        skip_this = 1
+        while skip_this:
+            X_batch[ptr], y_batch[ptr] = next(xy)
+            if abs(y_batch[ptr]) < 0.1:
+                if np.random.uniform() > skip_pr:
+                    skip_this = 0
+            else:
+                skip_this = 0
+
+        ptr += 1
+        if (ptr % batch_size) == 0:
+            yield (X_batch, y_batch)
+            ptr = 0
+
+def squarify(X):
+    n = X.shape[0]
+    out = np.zeros((n,64,64,3))
+    for i in range(0,X.shape[0]):
+        img = X[i,:,:,:]
+        out[i,:,:,:] = cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA)
+    return out
 
 def reshape_xy(X,y):
-	#
-	# I stored raw images as a single dimension array, where each entry
-	# holds three subarrays.  These subarrays are width x height images.
-	# This routine converts an n-elt array [wxh, wxh, ..., wxh] into a tensor of
-	# shape [n, w, h, 1].
-	#
+    #
+    # X is a single-dimension array of images, where each image is a 3-plane WxH image
+    # stored as a [w,h,3] array.  y is a single dimension array of label values.
+    #
+    # We return a tensor X [n, w, h, 3] and a tensor y [n].
+    #
     image_shape = X[0].shape
     n_samples = len(X)
-    X1 = np.zeros((n_samples, image_shape[0], image_shape[1], 1))
+    #X1 = np.zeros((n_samples, image_shape[2], image_shape[0], image_shape[1]))
+    X1 = np.zeros((n_samples, image_shape[0], image_shape[1], image_shape[2]))
     y1 = np.zeros((n_samples))
     for i in range(0,n_samples):
-        X1[i,:,:] = X[i].reshape(image_shape[0], image_shape[1], 1)
+        #for j in range(0,2):
+        #    X1[i,j,:,:] = np.array(X[i])[:,:,j]
+        X1[i,:,:,:] = np.array(X[i])
         y1[i] = signal_scale*y[i]
     return X1, y1
 
+
+def comma_model(shape):
+    #
+    # Build the self-driving CNN model from comma.ai,
+    # about cut in half.
+    #
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5 - 1., input_shape=shape, 
+        name='Normalization'))
+    model.add(Convolution2D(3, 1, 1, name='Color'))
+    model.add(Convolution2D(16, 5, 5, subsample=(3,3), name='Conv1', activation='elu'))
+    model.add(Convolution2D(32, 3, 3, subsample=(2,2), name='Conv2', activation='elu'))
+    model.add(Convolution2D(64, 3, 3, subsample=(2,2), name='Conv3'))
+    model.add(Flatten())
+    model.add(Dropout(0.2))
+    model.add(Activation('elu'))
+    model.add(Dense(512, name='FC1'))
+    model.add(Dropout(0.5))
+    model.add(Activation('elu'))
+    model.add(Dense(1, name='output'))
+    model.summary()
+    return model
+
 def build_model(shape):
-	#
-	# Build the self-driving CNN model from the NVidia paper
-	#
-	model = Sequential()
-	model.add(Convolution2D(24, 5, 5, border_mode='same', subsample=(2,2), input_shape=shape))
-	model.add(Activation('relu'))
-	model.add(Dropout(0.5))
-	model.add(Convolution2D(36, 5, 5, border_mode='same', subsample=(2,2)))
-	model.add(Activation('relu'))
-	model.add(Dropout(0.5))
-	model.add(Convolution2D(48, 5, 5, border_mode='same', subsample=(2,2)))
-	model.add(Activation('relu'))
-	model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2,2)))
-	model.add(Activation('relu'))
-	model.add(Convolution2D(64, 3, 3, border_mode='same', subsample=(2,2)))
-	model.add(Activation('relu'))
-	model.add(Flatten())
-	model.add(Dense(100))
-	model.add(Activation('relu'))
-	model.add(Dense(50))
-	model.add(Dense(10))
-	model.add(Dense(1))
-	return model
+    return nvidia_model(shape)
 
-def build_simple_model(shape):
-	#
-	# We build a simple convolution layer with RELU activtaion,
-	# followed by a full-connected layer with 100 controls,
-	# then a final output.  KISS.
-	#
-	model = Sequential()
-	model.add(Convolution2D(24, 5, 5, border_mode='same', 
-		subsample=(2,2), input_shape=shape))
-	model.add(Activation('relu'))
-	model.add(Flatten())
-	model.add(Dense(100))
-	model.add(Dense(1))
-	return model
+def vivek_model(shape):
+    #
+    # Build the self-driving CNN model from the NVidia paper
+    #
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5 - 1., input_shape=(64,64,3), name='Normalization'))
 
-def prefer_turns_in_data(X, y):
-	#
-	# The NVidia team recommended focusing on turns vs the usual
-	# case of "0" angle for going straight.  The more complex models would solve for
-	# 0 and struggle with the smaller adjustments in steering.  The
-	# accuracy was directly related to the percentage of 0's encountered!
-	# Here we ensure that 0's are only half the training set.
-	#
-	turns = np.where(y != 0)[0]
-	straight = np.where(y == 0)[0]
-	straight2 = np.random.choice(straight, len(turns))
-	sample = np.append(turns,straight2)
-	return X[sample], y[sample]
+    model.add(Convolution2D(3, 1, 1, name='Conv1'))
+
+    model.add(Convolution2D(32, 3, 3, activation="elu", name="Conv2"))
+    model.add(Convolution2D(32, 3, 3, activation="elu", name="Conv3"))
+    model.add(MaxPooling2D())
+    model.add(Dropout(0.5))
+
+    model.add(Convolution2D(64, 3, 3, activation="elu", name="Conv4"))
+    model.add(Convolution2D(64, 3, 3, activation="elu", name="Conv5"))
+    model.add(MaxPooling2D())
+    model.add(Dropout(0.5))
+
+    model.add(Convolution2D(128, 3, 3, activation="elu", name="Conv6"))
+    model.add(Convolution2D(128, 3, 3, activation="elu", name="Conv7"))
+    model.add(MaxPooling2D())
+    model.add(Dropout(0.5))
+
+    model.add(Flatten())
+
+    model.add(Dense(512, name='FC1'))
+    model.add(Dense(64, name='FC2'))
+    model.add(Dense(16, name='FC3'))
+
+    model.add(Dense(1, name='output'))
+
+    model.summary()
+    return model
+
+def nvidia_model(shape):
+    #
+    # Build the self-driving CNN model from the NVidia paper
+    #
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5 - 1., input_shape=shape, name='Normalization'))
+    model.add(Convolution2D(24, 5, 5, subsample=(2,2), activation='elu', name='Conv1'))
+    model.add(Convolution2D(36, 5, 5, subsample=(2,2), activation='elu', name='Conv2'))
+    model.add(Convolution2D(48, 5, 5, subsample=(2,2), activation='elu', name='Conv3'))
+    model.add(Convolution2D(64, 3, 3, activation='elu', name='Conv4'))
+    model.add(Convolution2D(64, 3, 3, activation='elu', name='Conv5'))
+    model.add(Flatten())
+    model.add(Dense(100, name='FC1'))
+    model.add(Dense(50, name='FC2'))
+    model.add(Dense(10, name='FC3'))
+    model.add(Dense(1, name='output'))
+    model.summary()
+    return model
 
 def save_model(model):
-	#
-	# Save the model weights in .h5 and the layout in .json per instructions.
-	#
-	with open("./model.json", "w") as f:
-		json.dump(model.to_json(), f)
-	model.save("./model.h5")
-	return model
+    #
+    # Save the model weights in .h5 and the layout in .json per instructions.
+    #
+    with open("./model.json", "w") as f:
+        f.write(model.to_json())
+        #son.dump(model.to_json(), f)
+    model.save_weights("./model.h5", True)
+    return model
 
-def train_model(model, X, y):
-	# 
-	# Train our model on images X and driving angles y.
-	# Scramble and choose a train/test split of 80/20.
-	#
-	epochs = 0
-	while epochs < nb_epoch:
-		X1, y1 = prefer_turns_in_data(X,y)
-		X_train, X_test, y_train, y_test = train_test_split(X1, y1, 
-			test_size=0.2, random_state=42)
-		X1 = y1 = None
-		model.fit(X_train, y_train,
-			batch_size=batch_size, nb_epoch=5,
-        	verbose=1, validation_data=(X_test, y_test))
-		epochs += 5
-		save_model(model)
+def train_model(model, skip_pr = 0.8):
+    # 
+    # Train our model on images X and driving angles y.
+    # Scramble and choose a train/test split of 80/20.
+    #
+    samples = epoch_size()
+    train_epoch = int(samples*train_split)
+    test_epoch = samples - train_epoch
+    epochs = 0
+    while epochs < nb_epoch:
+        model.fit_generator(
+            batch_generator(skip_pr=skip_pr),
+            samples_per_epoch = train_epoch,
+            validation_data = batch_generator(validate=True, skip_pr=skip_pr),
+            nb_val_samples = test_epoch,
+            max_q_size = 3,
+            verbose=1,
+            nb_epoch=1)
+        save_model(model)
+        skip_pr *= 0.5
+        epochs += 1
+    return model
 
-	return model
-
-def learn(model=None):
-	#
-	# Use this routine to train and save a new model.
-	#
-	X_raw, y_raw = load_all_data()
-	X, y = reshape_xy(X_raw, y_raw)
-	if model is None:
-		model = build_model(X.shape[1:])
-	model.compile(loss='mse', optimizer=Adam())
-	return save_model(train_model(model, X, y))
+def learn(model=None, skip_pr=1.0):
+    #
+    # Use this routine to train and save a new model.
+    #
+    if model is None:
+        model = build_model(get_input_shape())
+        model.compile(loss='mse', optimizer=Adam(), metrics=['accuracy'])
+    return save_model(train_model(model, skip_pr=skip_pr))
 
 def load_model():
-	#
-	# Likewise, load a model here.
-	#
-	with open('./model.json', mode='r') as f:
-		model = model_from_json(json.loads(f.read()))
+    #
+    # Likewise, load a model here.
+    #
+    with open('./model.json', mode='r') as f:
+        loaded_json = f.read()
+    model = model_from_json(loaded_json)
+    model.compile(loss='mse', optimizer=Adam(), metrics=['accuracy'])
 
-	# load weights into new model
-	model.load_weights("./model.h5")
-	return model
+    # load weights into new model
+    model.load_weights("./model.h5")
+    return model
 
 def predict_steering(model, img):
-	# 
-	# Given a model and a raw input image, return the predicted steering angle.
-	#
-	X, _ = reshape_xy([normalize_image(process(img))], [0])
-	return model.predict(X, batch_size=1, verbose=0)[0][0]/signal_scale
+    # 
+    # Given a model and a raw input image, return the predicted steering angle.
+    #
 
+    img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    #cv2.imshow('image',img_bgr)
+    #cv2.waitKey()
+    out = process(img_bgr)
+    #cv2.imshow('image',out)
+    #cv2.waitKey()
+    ##img = cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA)
+    X, _ = reshape_xy([out], [0])
+    p = model.predict(X)
+    return p[0][0]/signal_scale
 

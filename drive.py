@@ -26,24 +26,33 @@ prev_image_array = None
 @sio.on('telemetry')
 def telemetry(sid, data):
     # The current steering angle of the car
-    steering_angle = data["steering_angle"]
-    # The current throttle of the car
-    throttle = data["throttle"]
-    # The current speed of the car
-    speed = data["speed"]
+    steering_angle = float(data["steering_angle"])
+    throttle = float(data["throttle"])
+    speed = float(data["speed"])
+
     # The current image from the center camera of the car
     imgString = data["image"]
     image = Image.open(BytesIO(base64.b64decode(imgString)))
-    image_array = np.asarray(image)
-    #image_array = cv2.resize(image_array, (0,0), fx=0.5, fy=0.5)
-    #transformed_image_array = image_array[None, :, :, :]
+    #image.show()
+    image_array = np.array(image)  # critical!  np.asarray() doesn't work on Mac
+
     # This model currently assumes that the features of the model are just the images. Feel free to change this.
-    steering_angle = predict_steering(model, image_array)
+    new_steer = predict_steering(model, image_array)
+
+    # Steering is designed for a speed of 8.  Let's reduce the angle if we're going faster
+    if speed > 8:
+        theta = new_steer*(8.0/speed)
+    else:
+        theta = new_steer
+
+    # Try to stay at 10mph
+    throttle = max(0.0, min(0.5, (10.0-speed)/5.0))
+
     #steering_angle = 0
     # The driving model currently just outputs a constant throttle. Feel free to edit this.
-    throttle = 0.2
-    print(steering_angle, throttle)
-    send_control(steering_angle, throttle)
+    
+    print(theta, throttle)
+    send_control(theta, throttle)
 
 @sio.on('connect')
 def connect(sid, environ):
@@ -68,7 +77,8 @@ if __name__ == '__main__':
     #eventlet.wsgi.server(eventlet.listen(('', 4567)), app)
 
     with open(args.model, 'r') as jfile:
-        model = model_from_json(json.load(jfile))
+        model = model_from_json(jfile.read())
+        # was model = model_from_json(json.load(jfile))
 
     model.compile("adam", "mse")
     weights_file = args.model.replace('json', 'h5')
