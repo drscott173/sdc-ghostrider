@@ -26,6 +26,7 @@ signal_scale = 1
 train_split = 0.95
 test_image = "./test_train/test/IMG/center_2016_12_26_10_59_29_903.jpg"
 gid = "00b4903a97d4b5e0859e13d01d014b8f2dd1ebc9fbf9188650a15efe983f8596term"
+use64x64 = 0 # Set to 1 to use Vivek's innovative 64x64 model for images
 
 ##
 ## Image augmentation
@@ -110,16 +111,17 @@ def augment_image(X, y):
         X = X[2]
         y += -0.25
     #print("Chosen X shape", X.shape)
-    img = X
+    img = augment_brightness_camera_images(X)
     if (np.random.randint(4) == 0):
         img_shadows = add_random_shadow(img)
-        img_bright = augment_brightness_camera_images(img_shadows)
-        img_tr, y = trans_image(img_bright, y, 50)
+        img_tr, y = trans_image(img_shadows, y, 50)
         img = img_tr
         if (np.random.randint(2) == 0):
             img = cv2.flip(img_tr,1)
             y = -y
-    #img = cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA)
+    if use64x64:
+        img1 = cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA)
+        return img1, y
     return img, y
 
 def write_aug(X,y,fname):
@@ -249,12 +251,15 @@ def Xy_generator(validate=False):
     # If "validate'" is false, we yield the training data.
     #
     ishape = get_input_shape()
-    chosen = np.zeros((1, ishape[0], ishape[1], ishape[2]))
+    if use64x64:
+        chosen = np.zeros((1, 64, 64, 3))
+    else:
+        chosen = np.zeros((1, ishape[0], ishape[1], ishape[2]))
     while 1:
         for d in [x[len(train_dir):] for x in glob(train_dir+"*")]:   #iterate over trainin sets
             for data_path in gen_data(d):
                 with open(data_path, mode='rb') as f:    #iterate over chunks
-                    print("\nVisiting ",data_path)
+                    #print("\nVisiting ",data_path)
                     X_d,y_d = pickle.load(f)
                     X_train, X_test, y_train, y_test = train_test_split(X_d, y_d, 
                         test_size=(1.0-train_split), random_state=42)
@@ -273,8 +278,10 @@ def Xy_generator(validate=False):
 
 def batch_generator(batch_size=32, validate=False, skip_pr=0.0):
     ishape = get_input_shape()
-    X_batch = np.zeros((batch_size, ishape[0], ishape[1], ishape[2]))
-    #X_batch = np.zeros((batch_size, 64, 64, 3))
+    if use64x64:
+        X_batch = np.zeros((batch_size, 64, 64, 3))
+    else:
+        X_batch = np.zeros((batch_size, ishape[0], ishape[1], ishape[2]))
     y_batch = np.zeros((batch_size))
     ptr = 0
     xy = Xy_generator(validate)
@@ -311,7 +318,6 @@ def reshape_xy(X,y):
     #
     image_shape = X[0].shape
     n_samples = len(X)
-    #X1 = np.zeros((n_samples, image_shape[2], image_shape[0], image_shape[1]))
     X1 = np.zeros((n_samples, image_shape[0], image_shape[1], image_shape[2]))
     y1 = np.zeros((n_samples))
     for i in range(0,n_samples):
@@ -345,11 +351,14 @@ def comma_model(shape):
     return model
 
 def build_model(shape):
-    return nvidia_model(shape)
+    if use64x64:
+        return vivek_model()
+    else:
+        return nvidia_model(shape)
 
-def vivek_model(shape):
+def vivek_model():
     #
-    # Build the self-driving CNN model from the NVidia paper
+    # Build the self-driving CNN model from the Vivek's blog post
     #
     model = Sequential()
     model.add(Lambda(lambda x: x/127.5 - 1., input_shape=(64,64,3), name='Normalization'))
@@ -373,7 +382,7 @@ def vivek_model(shape):
 
     model.add(Flatten())
 
-    model.add(Dense(512, name='FC1'))
+    model.add(Dense(512, name='FC1', activation='elu'))
     model.add(Dense(64, name='FC2'))
     model.add(Dense(16, name='FC3'))
 
@@ -465,9 +474,12 @@ def predict_steering(model, img):
     #cv2.imshow('image',img_bgr)
     #cv2.waitKey()
     out = process(img_bgr)
+    if use64x64:
+        img64 = cv2.resize(out, (64, 64), interpolation=cv2.INTER_AREA)
+        out = img64
     #cv2.imshow('image',out)
     #cv2.waitKey()
-    ##img = cv2.resize(img, (64, 64), interpolation=cv2.INTER_AREA)
+    ##
     X, _ = reshape_xy([out], [0])
     p = model.predict(X)
     return p[0][0]/signal_scale
