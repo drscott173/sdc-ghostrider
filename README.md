@@ -48,11 +48,7 @@ resolution.  We also require a Python 3.x environment with the following package
 - keras
 - tensorflow
 
-The GitHub distribution includes the sample images.  The generated "data.p" data files
-must be generated on demand as the results are too large to store on GitHub.  This will
-happen automatically the first time you train a model.
-
-We include the following key files so you can get started quickly:
+The GitHub distribution includes the sample images. We include the following key files so you can get started quickly:
 
 - model.json, a json file storing the keras convolutional network
 - model.h5, weights after a dozen hours of training
@@ -64,16 +60,16 @@ Good programmers learn from great programmers.
 
 Researchers at NVidia had created
 [a deep neural network](http://images.nvidia.com/content/tegra/automotive/images/2016/solutions/pdf/end-to-end-dl-using-px.pdf) 
-for driving a car solely from camera input.  They biased training examples to prefer snapshots where turning is involved.This was to avoid overfitting 
+for driving a car solely from camera input.  They biased training examples to prefer snapshots 
+where turning is involved. This was to avoid overfitting 
 to the usual case of driving straight.  These images were separated into three YUV channels
 and fed into a deep network.  
 
 For pedagogical purposes, we've recreated their convolutional neural network in
 Keras with a TensorFlow backend.  We have inserted dropout regularization after every
 two convolutional layers.  We also treated the last four fully connected layers
-as a "control nozzle" that would combine the 1152 flattened, activated logits
+as a "control nozzle" that would combine the 1164 flattened, activated logits
 in non-linear ways.  These last layers do not have activation.
-
 
 ## Model Architecture
 
@@ -96,7 +92,7 @@ We add a normalization up front to simplify fitting and improve
 performance of network optimization.  This normalization blocks out the top and
 bottom of the image with zero's to focus on the driving area, 
 then normalizes pixel values to 
-the interval [-0.5, 0.5].
+the interval [-0.5, 0.5].  Here's what one image plane looks like:
 
 ![Normalized Image](images/data.png?raw=true "A normalized image as input data")
 
@@ -109,7 +105,7 @@ This proved quite useful in adapting to unseen conditions in the second test
 road. The layers are 
 
 - An input layer of [?, 160, 320, 3] YUV images
-- A virtual "normalization" layer using code (see 'process' routine in model.py)
+- A Lambda layer to rescale image values to the interval [-.5, .5] 
 - A 1x1 convolution with 3 filters, linear output for color modification
 - 5x5 convolution with 24 filters, with a stride of 2, 50% dropout, ELU activation
 - 5x5 convolution with 36 filters, 50% dropout, ELU activation
