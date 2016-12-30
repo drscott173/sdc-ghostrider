@@ -24,7 +24,7 @@ just fine.
 
 [![Final Result](https://img.youtube.com/vi/Wi1_rnNKB18/0.jpg)](https://www.youtube.com/watch?v=Wi1_rnNKB18)
 
-I spent over two weeks tracking down an obscure bug.  I was copying the raw RGB image 
+I spent over several long days tracking down an obscure bug.  I was copying the raw RGB image 
 from the simulation to an array using "numpy.asarray".  However, this was broken on Python 3.5
 on my Mac producing nearly completely white images.  My elaborate models seemed stuck
 on a single output value.  Instead, "numpy.array()" casting was all I needed.
