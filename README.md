@@ -15,6 +15,23 @@ current values for the brake, steering, and acceleration.  We test the network
 by feeding raw images into our network, extracting the steering angle, then transmitting
 the angle into the game via a socket connection.
 
+## TL; DR version
+
+Alas, it works.  Amazing.  We've built a neural network from scratch
+that learns to drive in an animated, 3D driving game.  The AI was
+trained on one game then fed a completely new surrounding and did
+just fine.
+
+[![Final Result](https://img.youtube.com/vi/Wi1_rnNKB18/0.jpg)](https://www.youtube.com/watch?v=Wi1_rnNKB18)
+
+I spent over two weeks tracking down an obscure bug.  I was copying the raw RGB image 
+from the simulation to an array using "numpy.asarray".  However, this was broken on Python 3.5
+on my Mac producing nearly completely white images.  My elaborate models seemed stuck
+on a single output value.  Instead, "numpy.array()" casting was all I needed.
+
+Lesson learned.  Always, and I do mean always, check the images on your data pipeline
+to make sure memory is copied correctly with the correct transformations and bit order!
+
 ## Dependencies
 
 This pedagogical example requires that the simulator be run in 640x480
@@ -41,28 +58,37 @@ We include the following key files so you can get started quickly:
 - model.h5, weights after a dozen hours of training
 - drive.py, the autonomous server, run with "python drive.py model.json"
 
-
-
 ## Solution Design
 
 Good programmers learn from great programmers.
 
 Researchers at NVidia had created
 [a deep neural network](http://images.nvidia.com/content/tegra/automotive/images/2016/solutions/pdf/end-to-end-dl-using-px.pdf) 
-for driving a car solely from camera input.  They biased training examples to prefer snapshots where turning is involved.  This was to avoid overfitting 
+for driving a car solely from camera input.  They biased training examples to prefer snapshots where turning is involved.This was to avoid overfitting 
 to the usual case of driving straight.  These images were separated into three YUV channels
 and fed into a deep network.  
 
 For pedagogical purposes, we've recreated their convolutional neural network in
-Keras with a TensorFlow backend.  We've reduced the image size and chose black
-and white vs. color images to train on a laptop CPU. 
+Keras with a TensorFlow backend.  We have inserted dropout regularization after every
+two convolutional layers.  We also treated the last four fully connected layers
+as a "control nozzle" that would combine the 1152 flattened, activated logits
+in non-linear ways.  These last layers do not have activation.
+
 
 ## Model Architecture
 
 ![NVidia's CNN Model](images/network.png?raw=true "CNN architecture (courtesy NVidia)")
 
-The input X to our model is a tensor of dimension [?, 80, 160, 1], where ? is the
-number of 160x80 black and white images stored in row-major order.  The labels y to our
+The input X to our model is a tensor of dimension [?, 160, 320, 3], where ? is the
+number of 320x160 color images stored in row-major order, one plane for
+each color.  Images are expected to use the YUV color space which has been known 
+to better distinguish gradient changes in light intensity, which are crucial for edge
+detection.  We also include a simple convolution layer up front that combines the 
+channel values and surrounding pixels in a simple linear fashion.  Color has been
+shown to have value in navigation.  This lets the model figure out how to modify
+that color.
+
+The labels y to our
 network are of dimension [?] where each value is the observed steering angle from
 our simulated driving for the corresponding image.
 
@@ -74,62 +100,95 @@ the interval [-0.5, 0.5].
 
 ![Normalized Image](images/data.png?raw=true "A normalized image as input data")
 
-Our model seen above feeds these normalized images into
-a succession of 5 convolutional networks (CNNs) with RELU activation, followed
-by a tapering of 3 fully connected layers.  The first two CNNs
-also add a dropout filter that squashes half of the values randomly on every cycle
-to prevent overfitting.  The layers are 
+The model seen above was first created by NVidia for a deep learning approach to
+detecting steer purely from images. 
 
-- An input layer of [?, 80, 160, 1] images
+Our model is a slight modification to this, inserting pooling and dropout layers,
+and using 2x2 max pooling instead of larger 2x2 strides in the middle of the network.
+This proved quite useful in adapting to unseen conditions in the second test
+road. The layers are 
+
+- An input layer of [?, 160, 320, 3] YUV images
 - A virtual "normalization" layer using code (see 'process' routine in model.py)
-- 5x5 convolution with 24 filters, with a stride of 2, 50% dropout, RELU activation
-- 5x5 convolution with 36 filters, with a stride of 2, 50% dropout, RELU activation
-- 5x5 convolution with 48 filters, with a stride of 2, RELU activation
-- 3x3 convolution with 64 filters, with a stride of 2, RELU activation
-- 3x3 convolution with 64 filters, with a stride of 2, RELU activation
+- A 1x1 convolution with 3 filters, linear output for color modification
+- 5x5 convolution with 24 filters, with a stride of 2, 50% dropout, ELU activation
+- 5x5 convolution with 36 filters, 50% dropout, ELU activation
+- A 2x2 Max Pooling layer in lieu of a 2x2 stride as seen with NVidia
+- A 50% dropout layer to avoid overfitting
+- 5x5 convolution with 48 filters, RELU activation
+- 3x3 convolution with 64 filters, RELU activation
+- A 2x2 Max Pooling layer in lieu of a 2x2 stride as seen with NVidia
+- A 50% dropout layer to avoid overfitting
+- 3x3 convolution with 64 filters, with a stride of 2, ELU activation
 - A flattening layer
-- A fully connected linear layer of 100 neurons, RELU activation
-- A fully connected layer of 50 neurons, RELU activation
+- A fully connected linear layer of 100 neurons
+- A fully connected layer of 50 neurons
 - A fully connected layer of 10 neurons
 - An output layer of 1 neuron
+
+The output layer yielded our predicted steering angle. This was compared against
+the desired angle.  An Adam optimzer was used for back propagation, using the mean
+squared error between the desired and predict angle as a cost function during
+optimization.
 
 ## Training Dataset
 
 We created a subdirectory "train" to hold our training images from the simulation.
 Each directory within "train" holds an IMG directory with screen captures of the 
 driving simulation.  The directory also contains a CSV file that lists image pathnames
-followed by steering angle, throttle, and so forth.  We manually modified the 
-pathnames to make them relative vs. absolute for improved sharing.
+followed by steering angle, throttle, and so forth. 
 
 We wrote processing routines that convert the JPEG images into normalized
 images and extract the driving angle from the CSV.  The images and angles are
-stacked vertically to create a feature set X and a label set y.  We store
-the array [X,y] in data.p within the directory.
+stacked vertically to create a feature set X and a label set y.  This creates 
+an input array [X,y] for the neural networks.
 
-For debugging purposes we also create animated videos of both the extracted
-images as well as early experiments in identifying lines in the image.  The latter
-were not used upon further review of the NVidia paper.
+We captured four different
+sessions driving slowly at 10mph with a keyboard control.  The joystick
+would have been far easier!  The sessions were:
+ 
+- One lap around the track, being careful to stay in the center and hit turns slowly
+- One lap going the opposite way
+- One lap where we constantly veered off the main road to the left, turned on the camera,
+recorded us getting back into the road center, going forward, turning off the camera,
+and repeating.
+- One lap doing the "off road" trick but on the right
 
-Using this format we then ran multiple simulations.  We captured 5 different
-sessions of correcting steering when you drive off the "left" side of the road,
-then 5 sessions of corrected steering when you drive off the "right" side of the
-road, followed by "normal" driving as best we could in the center.   All told
-we had nearly 25,000 examples.
+## Data Augmentation
 
-We create a training set by extracting all these files into memory.  Once there,
-we first extracted all the input examples with non-zero driving angle as these
-are the "turning" examples from the paper.  We complement this with a random 
-selection of "going straight" examples where the steering angle was zero.  We
-balanced the dataset so that half were turning, half were straight.
+We augmented captured data with image filters to simulate other
+situations and essentially create an "infinite" dataset.  The filters
+were:
+
+- Brightness filter, making the scene randomly darker or brighter
+- Shadow filter, layering random gray shadows over the image
+- Translation filter, randomly shifting the image
+- Reverse filter, randomly flipping the image horizontally 
+
+The translation and reverse filters required slight modifications to the 
+steering angle, which we achieved through trial and error.
 
 ## Training Process
 
-We used a modified version of k-fold validation.  Since training of this complex
-network was slow on a laptop, we would extract and shuffle a training set
-from the original data every 5 epochs.  From this shuffled set we'd use 80 percent
-for training with a batch size of 100, and 20 percent for evaluation.
-We would also save the network and its
-weights to allow us to resume our life (you know, to eat, or sleep).
+We first counted all the captured images, from all subdirectories of the
+train directory.  This became our "epoch" size.
+
+We created a Python generator, an object that continually emits one image and
+one steering angle from these captured images.  The generator would first randomly
+shuffle the subdirectories (left, right, normal, reverse). Once in a directory,
+the generator would shuffle the images and choose 95% for training, 5% for validation.
+Every image was randomly augmented.  The augmentation process would often leave
+an image untouched, too.
+
+The generator initialy prefers steering angles above 0.1 and skips all others.
+As time progresses,
+the generator introduces more subtle angles to avoid bias towards 0 (which dominates
+the data) with exponential decay, just like the learning rate in Adam optimizers.
+
+We created a second, batch generator that fed off the individual image and steering
+angle generator.  This is what we used for training.  The batch generator would
+queue up 32 images, create a 32-deep pair of X,y values, then feed this into 
+the newtwork.
 
 We compared the predicted steering angle from our network against the desired
 angle y.  If these differed, we'd calculate the squared error and adjust
@@ -143,18 +202,17 @@ we tried multiple algorithms and techniques to get this right.
 
 ## Simulation
 
-Note:  Please load model.py and the "predict-steering(model,image)"
-when evaluating the model.  We have updated "drive.py" to do this
-correctly.
+Note:  We modified drive.py so that our throttle would mimic cruise control
+at roughly 10mph, hitting the gas or slowing down as needed.  This helped us
+with hills.
 
-We ran 400 epochs over 16 hours of training.  The result showed early signs
-of learning to ride the track!  It's a hair-raising ride, for sure.  The car is
-able to stay on the road and navigate a few turns before veering off or
-getting stuck.
+With over 250,000 weights the network was able to successfully complete the 
+first track and would run for hours without going off road.  As we sped the
+car up, our training data was inaccurate as the angles were too sharp for
+faster driving.  We attenuated the predicted angle a bit based on speed.
 
-With over 250,000 weights the network clearly neeeds (1) more and cleaner data and (2) more
-training time.  Yet this pedagogical example demonstrates that we're on the right
-path and convergence feels plausible.
+We ran 100 epochs over 4 hours of training on a CPU.  The network demonstrates 
+that we're on the right path and convergence feels plausible.
 
 Many students of this course observed that training seemed to "get stuck" after
 a half dozen epochs.  We saw the same behavior, which at first was highly

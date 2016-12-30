@@ -225,8 +225,6 @@ def get_input_shape():
     # Look at the first image we've recorded, process it,
     # and return the image shape we'll feed into the network.
     #
-    if use64x64:
-        return (64, 64, 3)
     first_dir = glob(train_dir+"*")[0][len(train_dir):]
     image_dir = train_dir+first_dir+"/IMG/"
     first_image = glob(image_dir+'*')[0]
@@ -270,8 +268,10 @@ def Xy_generator(validate=False):
     #
     ishape = get_input_shape()
     chosen = np.zeros((1, ishape[0], ishape[1], ishape[2]))
+    dirs = [x[len(train_dir):] for x in glob(train_dir+"*")]
     while 1:
-        for d in [x[len(train_dir):] for x in glob(train_dir+"*")]:   #iterate over trainin sets
+        np.random.shuffle(dirs)
+        for d in dirs:   #iterate over trainin sets
             print("Visiting {}".format(d))
             X_d, y_d = paths_and_steering_from_subdir(d)
             X_train, X_test, y_train, y_test = train_test_split(X_d, y_d, 
@@ -330,6 +330,37 @@ def reshape_xy(X,y):
     return X1, y1
 
 def build_model(shape):
+    #
+    # Add a colorspace transformation before the NVidia model,
+    # then add pooling and dropouts in the pipeline in lieu of
+    # successive downsampling with convolutions.
+    #
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5 - 1., input_shape=shape, name='Normalization'))
+    model.add(Convolution2D(3, 1, 1, name='ColorSpace'))
+
+    model.add(Convolution2D(24, 5, 5, subsample=(2,2), activation='elu', name='Conv1'))
+    model.add(Convolution2D(36, 5, 5, activation='elu', name='Conv2'))
+    model.add(MaxPooling2D())
+    model.add(Dropout(0.5))
+
+    model.add(Convolution2D(48, 5, 5, activation='elu', name='Conv3'))
+    model.add(Convolution2D(64, 3, 3, activation='elu', name='Conv4'))
+    model.add(MaxPooling2D())
+    model.add(Dropout(0.5))
+
+    model.add(Convolution2D(64, 3, 3, activation='elu', name='Conv5'))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+
+    model.add(Dense(100, name='FC1'))
+    model.add(Dense(50, name='FC2'))
+    model.add(Dense(10, name='FC3'))
+    model.add(Dense(1, name='output'))
+    model.summary()
+    return model
+
+def nvidia_model(shape):
     #
     # Build the self-driving CNN model from the NVidia paper
     #
